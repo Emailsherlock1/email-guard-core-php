@@ -115,10 +115,11 @@ composer test
 
 ## Data
 
-`data/disposable-snapshot.json.gz` is a point-in-time export of known
-disposable-mail domains, refreshed with each release
-(`php bin/build-snapshot.php`). Matching is exact, same as the API's live
-list: the local check never blocks an address the API would let pass.
+`data/disposable-snapshot.json.gz` is embedded from a pinned release of
+[email-guard-data](https://github.com/Emailsherlock1/email-guard-data),
+refreshed per core-lib release (`php bin/build-snapshot.php`). Matching is
+exact, same as the API's live list: the local check never blocks an address
+the API would let pass.
 
 ## License
 

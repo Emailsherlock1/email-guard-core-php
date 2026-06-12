@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.2] - 2026-06-13
+
+### Changed
+
+- The bundled snapshot now embeds a pinned release of
+  [email-guard-data](https://github.com/Emailsherlock1/email-guard-data)
+  (v2026.06.13, exported from the EmailSherlock live list) instead of the
+  raw upstream list. One source, consumed by every core library.
+- `bin/build-snapshot.php` validates the artifact against the
+  email-guard-disposable/1 format before embedding.
+
+
 ## [0.1.1] - 2026-06-13
 
 ### Fixed

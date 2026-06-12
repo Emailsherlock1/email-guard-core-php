@@ -1,46 +1,47 @@
 <?php
 
 /**
- * Rebuilds data/disposable-snapshot.json.gz from the public upstream list.
+ * Refreshes the bundled snapshot from a pinned email-guard-data release.
  *
- * Maintainer tool, not shipped functionality. Interim source until the
- * central email-guard data publishing pipeline exists; the output follows
- * the email-guard-disposable/1 format from the spec either way.
+ * Maintainer tool, not shipped functionality. Bump DATA_TAG to the release
+ * you want to embed, run the script, commit, release. Pinning a tag (not a
+ * branch) keeps the offline protection identical per core-lib release
+ * across languages, as the spec requires (section 9.1).
  *
  * Usage: php bin/build-snapshot.php
  */
 
 declare(strict_types=1);
 
-const UPSTREAM = 'https://raw.githubusercontent.com/disposable/disposable-email-domains/master/domains.txt';
+const DATA_TAG = 'v2026.06.13';
+const SOURCE = 'https://raw.githubusercontent.com/Emailsherlock1/email-guard-data/' . DATA_TAG . '/disposable-snapshot.json.gz';
 const TARGET = __DIR__ . '/../data/disposable-snapshot.json.gz';
 
-$raw = file_get_contents(UPSTREAM);
+$raw = file_get_contents(SOURCE);
 if ($raw === false) {
-    fwrite(STDERR, "Cannot fetch upstream list\n");
+    fwrite(STDERR, 'Cannot fetch ' . SOURCE . "\n");
     exit(1);
 }
 
-$domains = [];
-foreach (explode("\n", $raw) as $line) {
-    $line = strtolower(trim($line));
-    if ($line === '' || str_starts_with($line, '#')) {
-        continue;
-    }
-    $domains[$line] = true;
+// Validate before embedding: a malformed artifact must fail the build,
+// not ship inside the package.
+$decoded = json_decode((string) gzdecode($raw), true);
+if (
+    !is_array($decoded)
+    || ($decoded['format'] ?? null) !== 'email-guard-disposable/1'
+    || !is_array($decoded['domains'] ?? null)
+    || ($decoded['count'] ?? -1) !== count($decoded['domains'])
+) {
+    fwrite(STDERR, "Artifact failed validation against email-guard-disposable/1\n");
+    exit(1);
 }
-$domains = array_keys($domains);
-sort($domains, SORT_STRING);
 
-$snapshot = [
-    'format' => 'email-guard-disposable/1',
-    'version' => date('Y.m.d'),
-    'generated_at' => gmdate('Y-m-d\TH:i:s\Z'),
-    'count' => count($domains),
-    'domains' => $domains,
-];
+file_put_contents(TARGET, $raw);
 
-$json = json_encode($snapshot, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
-file_put_contents(TARGET, gzencode($json, 9));
-
-printf("Wrote %s: %d domains, version %s, %.1f KB gzipped\n", TARGET, count($domains), $snapshot['version'], filesize(TARGET) / 1024);
+printf(
+    "Embedded %s: %d domains, version %s, %.1f KB gzipped\n",
+    DATA_TAG,
+    $decoded['count'],
+    $decoded['version'],
+    filesize(TARGET) / 1024,
+);

@@ -24,7 +24,7 @@ use Emailsherlock\EmailGuard\Local\SyntaxChecker;
  */
 final class EmailGuard
 {
-    public const VERSION = '0.1.1';
+    public const VERSION = '0.1.2';
     public const SPEC_VERSION = '1.0.0';
 
     private const DEFAULTS = [
