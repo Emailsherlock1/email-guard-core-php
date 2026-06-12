@@ -82,6 +82,44 @@ final class EmailGuardTest extends TestCase
         new EmailGuard(['blockOn' => ['invalid']]);
     }
 
+    public function testEmptyStringApiKeyDisablesRemoteCheck(): void
+    {
+        $transport = MockTransport::respondingWith(['result' => 'valid']);
+        $guard = new EmailGuard(['api_key' => ''], $transport, $this->fixtureSnapshot());
+
+        $result = $guard->check('jane@real-corp.com');
+
+        $this->assertFalse($result->apiCalled);
+        $this->assertSame(0, $transport->calls);
+        $this->assertSame(Verdict::Unknown, $result->verdict);
+    }
+
+    public function testBrokenSnapshotSkipsDisposableCheckInsteadOfThrowing(): void
+    {
+        $guard = new EmailGuard(
+            [],
+            null,
+            new DisposableSnapshot(__DIR__ . '/does-not-exist.json'),
+        );
+
+        $warnings = [];
+        set_error_handler(static function (int $errno, string $message) use (&$warnings): bool {
+            $warnings[] = $message;
+
+            return true;
+        }, E_USER_WARNING);
+        try {
+            $result = $guard->check('x@mailinator.com');
+        } finally {
+            restore_error_handler();
+        }
+
+        $this->assertSame(Verdict::Unknown, $result->verdict);
+        $this->assertSame(Action::Allow, $result->action);
+        $this->assertNotEmpty($warnings);
+        $this->assertStringContainsString('disposable check skipped', $warnings[0]);
+    }
+
     private function fixtureSnapshot(): DisposableSnapshot
     {
         return new DisposableSnapshot(__DIR__ . '/vectors/fixtures/disposable-snapshot.json');
