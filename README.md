@@ -101,6 +101,27 @@ $guard = new EmailGuard(
 PSR-18 carries no per-request timeout, so configure the budget on the client
 itself.
 
+## Decision telemetry (optional)
+
+With an API key you can report decisions back so the account owner sees what
+the guard blocks (email-guard-spec section 11). Pass a `GuardReporter` to the
+guard; it records one event per check, and you flush the batch after the
+response is sent (the Symfony bundle wires this to `kernel.terminate`):
+
+```php
+use Emailsherlock\EmailGuard\GuardReporter;
+
+$reporter = new GuardReporter(apiKey: $key, integration: 'my-app');
+$guard = new EmailGuard(['api_key' => $key], reporter: $reporter);
+
+$guard->check($email);   // records automatically
+// ... after the response:
+$reporter->flush();      // batched POST /v1/guard/events
+```
+
+Key-gated (no key, no telemetry), fail-silent (a reporting failure never
+breaks or slows the host), and it sends the domain only, never the address.
+
 ## Conformance
 
 The test suite runs every vector from

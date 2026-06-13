@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.2.0] - 2026-06-13
+
+### Added
+
+- `GuardReporter`: decision-telemetry emitter (email-guard-spec section 11).
+  Records one event per `check()` decision and ships them batched to
+  `POST /v1/guard/events`. Key-gated (no key, no telemetry), fail-silent,
+  domain only (never the address). `EmailGuard` takes an optional reporter
+  and auto-records after each check; the caller decides when to `flush()`.
+- `GuardDecisionSource` (local|remote) constants.
+
+### Changed
+
+- SPEC_VERSION is now 1.1.0 (the lib implements the telemetry contract).
+
+
 ## [0.1.2] - 2026-06-13
 
 ### Changed

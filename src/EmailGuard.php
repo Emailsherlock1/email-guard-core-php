@@ -24,8 +24,8 @@ use Emailsherlock\EmailGuard\Local\SyntaxChecker;
  */
 final class EmailGuard
 {
-    public const VERSION = '0.1.2';
-    public const SPEC_VERSION = '1.0.0';
+    public const VERSION = '0.2.0';
+    public const SPEC_VERSION = '1.1.0';
 
     private const DEFAULTS = [
         'api_key' => null,
@@ -50,6 +50,7 @@ final class EmailGuard
         array $config = [],
         ?TransportInterface $transport = null,
         ?DisposableSnapshot $snapshot = null,
+        private readonly ?GuardReporter $reporter = null,
     ) {
         $unknown = array_diff_key($config, self::DEFAULTS);
         if ($unknown !== []) {
@@ -69,14 +70,21 @@ final class EmailGuard
     {
         $address = trim($email, " \t\r\n");
 
+        // Domain for telemetry (section 11): null when there is no @
+        // (syntax failed). Reused by the reserved-TLD / disposable checks.
+        $atPosition = strrpos($address, '@');
+        $domain = $atPosition !== false ? strtolower(substr($address, $atPosition + 1)) : null;
+        if ($domain === '') {
+            $domain = null;
+        }
+
         $verdict = null;
         $reasons = [];
 
         if (!SyntaxChecker::isValid($address)) {
             $verdict = Verdict::Invalid;
             $reasons = [Reason::BAD_SYNTAX];
-        } else {
-            $domain = strtolower(substr($address, strpos($address, '@') + 1));
+        } elseif ($domain !== null) {
             if (ReservedTld::isReserved($domain)) {
                 $verdict = Verdict::Invalid;
                 $reasons = [Reason::RESERVED_TLD];
@@ -108,7 +116,7 @@ final class EmailGuard
 
         $verdict ??= Verdict::Unknown;
 
-        return new Result(
+        $result = new Result(
             verdict: $verdict,
             action: $this->resolveAction($verdict, $degraded),
             reasons: $reasons,
@@ -116,6 +124,13 @@ final class EmailGuard
             apiCalled: $apiCalled,
             apiResponse: $apiResponse,
         );
+
+        // Telemetry (section 11): record the decision for later batched
+        // reporting. No-op without a configured reporter/key; the reporter
+        // owns the fail-silent, domain-only contract.
+        $this->reporter?->record($result, $domain);
+
+        return $result;
     }
 
     /**
