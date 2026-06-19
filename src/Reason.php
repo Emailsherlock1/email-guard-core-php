@@ -16,6 +16,13 @@ final class Reason
     public const DISPOSABLE_PROVIDER = 'disposable_provider';
     public const API_UNAVAILABLE = 'api_unavailable';
 
+    /**
+     * Appended when the `relay` signal is active (spec 6.5). Not a local-check
+     * reason: it rides the result's reason list so telemetry can attribute a
+     * relay-driven decision.
+     */
+    public const RELAY = 'relay';
+
     private function __construct()
     {
     }

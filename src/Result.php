@@ -15,6 +15,12 @@ final class Result
      * @param bool $apiCalled whether the transport was hit at all
      * @param array<string, mixed>|null $apiResponse raw decoded API response,
      *   informational only; it never influences the action
+     * @param bool $relay the relay signal (spec 6.5): the address sits on a
+     *   relay / forwarding / alias-masking service. Deliverable and reaching a
+     *   real person, just masked. Only ever set by the remote check. Inert
+     *   unless the integrator lists `relay` in block_on / review_on.
+     * @param ?string $relayProvider the service name when $relay is true (e.g.
+     *   "SimpleLogin"), null otherwise. Informational.
      */
     public function __construct(
         public readonly Verdict $verdict,
@@ -23,6 +29,8 @@ final class Result
         public readonly bool $degraded,
         public readonly bool $apiCalled,
         public readonly ?array $apiResponse = null,
+        public readonly bool $relay = false,
+        public readonly ?string $relayProvider = null,
     ) {
     }
 
