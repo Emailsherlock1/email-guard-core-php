@@ -42,6 +42,37 @@ final class EmailGuardTest extends TestCase
         $this->assertSame(['result' => 'valid', 'reason' => 'mailbox_accepts'], $result->apiResponse);
     }
 
+    public function testRelaySignalIsExposedOnResultEvenWhenNotBlocked(): void
+    {
+        // Default config does not list `relay`, so the address is allowed —
+        // but the signal + provider are still surfaced for the integrator.
+        $transport = MockTransport::respondingWith([
+            'result' => 'valid',
+            'reason' => 'mailbox_accepts',
+            'relay' => true,
+            'relay_provider' => 'SimpleLogin',
+        ]);
+        $guard = new EmailGuard(['api_key' => 'k'], $transport, $this->fixtureSnapshot());
+
+        $result = $guard->check('chookity-pok@passmail.net');
+
+        $this->assertTrue($result->relay);
+        $this->assertSame('SimpleLogin', $result->relayProvider);
+        $this->assertTrue($result->isAllowed());
+        $this->assertSame(['mailbox_accepts'], $result->reasons);
+    }
+
+    public function testRelayProviderDefaultsToNullWhenAbsent(): void
+    {
+        $transport = MockTransport::respondingWith(['result' => 'valid', 'reason' => 'mailbox_accepts']);
+        $guard = new EmailGuard(['api_key' => 'k'], $transport, $this->fixtureSnapshot());
+
+        $result = $guard->check('jane@real-corp.com');
+
+        $this->assertFalse($result->relay);
+        $this->assertNull($result->relayProvider);
+    }
+
     public function testNon2xxDegrades(): void
     {
         $transport = MockTransport::respondingWith(['error' => ['code' => 'server_error']], 503);

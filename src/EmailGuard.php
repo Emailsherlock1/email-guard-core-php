@@ -24,8 +24,8 @@ use Emailsherlock\EmailGuard\Local\SyntaxChecker;
  */
 final class EmailGuard
 {
-    public const VERSION = '0.2.0';
-    public const SPEC_VERSION = '1.1.0';
+    public const VERSION = '0.3.0';
+    public const SPEC_VERSION = '1.2.0';
 
     private const DEFAULTS = [
         'api_key' => null,
@@ -97,6 +97,11 @@ final class EmailGuard
         $degraded = false;
         $apiCalled = false;
         $apiResponse = null;
+        // Signals (spec 6.5): boolean response properties that overlay the
+        // verdict. Only the remote check can set them; a local verdict or a
+        // degraded check leaves relay false.
+        $relay = false;
+        $relayProvider = null;
 
         if ($verdict === null && $this->config['api_key'] !== null) {
             $apiCalled = true;
@@ -107,6 +112,9 @@ final class EmailGuard
                 if (is_string($reason) && $reason !== '') {
                     $reasons[] = $reason;
                 }
+                $relay = ($apiResponse['relay'] ?? null) === true;
+                $provider = $apiResponse['relay_provider'] ?? null;
+                $relayProvider = is_string($provider) && $provider !== '' ? $provider : null;
             } catch (TransportException) {
                 $verdict = Verdict::Unknown;
                 $reasons = [Reason::API_UNAVAILABLE];
@@ -116,13 +124,22 @@ final class EmailGuard
 
         $verdict ??= Verdict::Unknown;
 
+        // An active signal (true AND listed in block_on/review_on) appends its
+        // reason so telemetry can attribute the decision, even when a verdict
+        // independently produced the same action (spec 6.5).
+        if ($relay && $this->signalListed('relay')) {
+            $reasons[] = Reason::RELAY;
+        }
+
         $result = new Result(
             verdict: $verdict,
-            action: $this->resolveAction($verdict, $degraded),
+            action: $this->resolveAction($verdict, $degraded, $relay),
             reasons: $reasons,
             degraded: $degraded,
             apiCalled: $apiCalled,
             apiResponse: $apiResponse,
+            relay: $relay,
+            relayProvider: $relayProvider,
         );
 
         // Telemetry (section 11): record the decision for later batched
@@ -181,21 +198,36 @@ final class EmailGuard
         return $data;
     }
 
-    private function resolveAction(Verdict $verdict, bool $degraded): Action
+    private function resolveAction(Verdict $verdict, bool $degraded, bool $relay): Action
     {
         if ($degraded) {
             // Degradation bypasses block_on/review_on entirely (spec 6.4):
             // blocking "unknown" is a statement about answered unknowns, not
-            // about outages. fail_open alone decides here.
+            // about outages. fail_open alone decides here. Signals never fire on
+            // a degraded check (relay is false), so they are moot here too.
             return $this->config['fail_open'] ? Action::Allow : Action::Deny;
         }
-        if (in_array($verdict->value, $this->config['block_on'], true)) {
+        // A verdict OR an active relay signal can deny; deny beats review.
+        if (in_array($verdict->value, $this->config['block_on'], true)
+            || ($relay && in_array('relay', $this->config['block_on'], true))
+        ) {
             return Action::Deny;
         }
-        if (in_array($verdict->value, $this->config['review_on'], true)) {
+        if (in_array($verdict->value, $this->config['review_on'], true)
+            || ($relay && in_array('relay', $this->config['review_on'], true))
+        ) {
             return Action::Review;
         }
 
         return Action::Allow;
+    }
+
+    /**
+     * True when the named signal (spec 6.5) appears in block_on or review_on.
+     */
+    private function signalListed(string $signal): bool
+    {
+        return in_array($signal, $this->config['block_on'], true)
+            || in_array($signal, $this->config['review_on'], true);
     }
 }

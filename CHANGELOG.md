@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.3.0] - 2026-06-19
+
+### Added
+
+- `relay` signal (email-guard-spec 1.2.0, section 6.5). Extracts `relay` /
+  `relay_provider` from the Verify API response and exposes them on `Result`
+  (`$relay`, `$relayProvider`). An integrator can deny or review relay /
+  forwarding / alias-masking addresses (SimpleLogin, Apple Hide My Email,
+  Cloudflare Email Routing, …) via `block_on: ['relay']` / `review_on: ['relay']`.
+  Inert by default: a relay address is deliverable and reaches a real person,
+  just masked, so it passes unless opted in. When active, the reason `relay`
+  (`Reason::RELAY`) is appended so telemetry can attribute the decision.
+
+### Changed
+
+- SPEC_VERSION is now 1.2.0; conformance vectors include `relay.json`.
+
 ## [0.2.0] - 2026-06-13
 
 ### Added
