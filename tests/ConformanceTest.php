@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Emailsherlock\EmailGuard\Tests;
 
 use Emailsherlock\EmailGuard\EmailGuard;
+use Emailsherlock\EmailGuard\Http\TransportException;
 use Emailsherlock\EmailGuard\Local\DisposableSnapshot;
 use Emailsherlock\EmailGuard\Tests\Support\MockTransport;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -42,9 +43,22 @@ final class ConformanceTest extends TestCase
         $config = $vector['input']['config'] ?? [];
         $api = $vector['input']['api'] ?? null;
 
-        $transport = $api === 'unavailable'
-            ? MockTransport::unavailable()
-            : MockTransport::respondingWith(is_array($api) ? $api : []);
+        if ($api === 'unavailable') {
+            // Generic degraded check, cause not attributed.
+            $transport = MockTransport::unavailable();
+        } elseif (is_array($api) && isset($api['fail'])) {
+            // A specific transport failure to simulate (spec 5.2). timeout and
+            // connection throw from the transport; http and bad_response return
+            // a response and let EmailGuard classify it, as a real call would.
+            $transport = match ($api['fail']) {
+                'timeout' => MockTransport::throwing(TransportException::KIND_TIMEOUT),
+                'connection' => MockTransport::throwing(TransportException::KIND_CONNECTION),
+                'http' => MockTransport::respondingRaw('{}', (int) $api['status']),
+                'bad_response' => MockTransport::respondingRaw('not-json', 200),
+            };
+        } else {
+            $transport = MockTransport::respondingWith(is_array($api) ? $api : []);
+        }
 
         $guard = new EmailGuard(
             config: $config,

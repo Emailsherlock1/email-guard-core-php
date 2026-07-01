@@ -6,7 +6,9 @@ namespace Emailsherlock\EmailGuard\Tests;
 
 use Emailsherlock\EmailGuard\Action;
 use Emailsherlock\EmailGuard\EmailGuard;
+use Emailsherlock\EmailGuard\Http\TransportException;
 use Emailsherlock\EmailGuard\Local\DisposableSnapshot;
+use Emailsherlock\EmailGuard\Reason;
 use Emailsherlock\EmailGuard\Tests\Support\MockTransport;
 use Emailsherlock\EmailGuard\Verdict;
 use PHPUnit\Framework\TestCase;
@@ -73,7 +75,7 @@ final class EmailGuardTest extends TestCase
         $this->assertNull($result->relayProvider);
     }
 
-    public function testNon2xxDegrades(): void
+    public function testNon2xxDegradesAndAttributesHttpBucket(): void
     {
         $transport = MockTransport::respondingWith(['error' => ['code' => 'server_error']], 503);
         $guard = new EmailGuard(['api_key' => 'k'], $transport, $this->fixtureSnapshot());
@@ -82,9 +84,21 @@ final class EmailGuardTest extends TestCase
 
         $this->assertTrue($result->degraded);
         $this->assertSame(Action::Allow, $result->action);
+        // Umbrella first, then the attributed cause (spec 5.2).
+        $this->assertSame([Reason::API_UNAVAILABLE, Reason::API_HTTP_5XX], $result->reasons);
     }
 
-    public function testNonJsonBodyDegrades(): void
+    public function testFourXxAttributesHttp4xxBucket(): void
+    {
+        $transport = MockTransport::respondingWith(['error' => ['code' => 'rate_limited']], 429);
+        $guard = new EmailGuard(['api_key' => 'k'], $transport, $this->fixtureSnapshot());
+
+        $result = $guard->check('jane@real-corp.com');
+
+        $this->assertSame([Reason::API_UNAVAILABLE, Reason::API_HTTP_4XX], $result->reasons);
+    }
+
+    public function testNonJsonBodyDegradesAndAttributesBadResponse(): void
     {
         $transport = MockTransport::respondingRaw('<html>gateway error</html>');
         $guard = new EmailGuard(['api_key' => 'k'], $transport, $this->fixtureSnapshot());
@@ -93,6 +107,40 @@ final class EmailGuardTest extends TestCase
 
         $this->assertTrue($result->degraded);
         $this->assertSame(Verdict::Unknown, $result->verdict);
+        $this->assertSame([Reason::API_UNAVAILABLE, Reason::API_BAD_RESPONSE], $result->reasons);
+    }
+
+    public function testTimeoutAttributesApiTimeout(): void
+    {
+        $transport = MockTransport::throwing(TransportException::KIND_TIMEOUT);
+        $guard = new EmailGuard(['api_key' => 'k'], $transport, $this->fixtureSnapshot());
+
+        $result = $guard->check('jane@real-corp.com');
+
+        $this->assertTrue($result->degraded);
+        $this->assertSame([Reason::API_UNAVAILABLE, Reason::API_TIMEOUT], $result->reasons);
+    }
+
+    public function testConnectionFailureAttributesApiUnreachable(): void
+    {
+        $transport = MockTransport::throwing(TransportException::KIND_CONNECTION);
+        $guard = new EmailGuard(['api_key' => 'k'], $transport, $this->fixtureSnapshot());
+
+        $result = $guard->check('jane@real-corp.com');
+
+        $this->assertSame([Reason::API_UNAVAILABLE, Reason::API_UNREACHABLE], $result->reasons);
+    }
+
+    public function testUnattributedFailureKeepsOnlyUmbrella(): void
+    {
+        // A transport that throws without a kind (the generic outage) must keep
+        // the pre-1.3.0 behavior: api_unavailable alone, no granular reason.
+        $transport = MockTransport::unavailable();
+        $guard = new EmailGuard(['api_key' => 'k'], $transport, $this->fixtureSnapshot());
+
+        $result = $guard->check('jane@real-corp.com');
+
+        $this->assertSame([Reason::API_UNAVAILABLE], $result->reasons);
     }
 
     public function testUnexpectedFutureResultValueMapsToUnknown(): void

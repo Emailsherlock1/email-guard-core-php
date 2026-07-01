@@ -9,8 +9,11 @@ use Emailsherlock\EmailGuard\Http\TransportInterface;
 use Emailsherlock\EmailGuard\Http\TransportResponse;
 
 /**
- * Transport mock for the conformance harness: either unavailable (throws)
- * or answers 200 with a fixed JSON body. Records every call.
+ * Transport mock for the conformance harness: either unavailable (throws,
+ * optionally with an attributed failure kind) or answers a fixed body and
+ * status. Records every call. HTTP-status and non-JSON failures are simulated
+ * by returning the response and letting EmailGuard classify it, exactly as a
+ * real transport would.
  */
 final class MockTransport implements TransportInterface
 {
@@ -26,12 +29,19 @@ final class MockTransport implements TransportInterface
         private readonly int $statusCode,
         private readonly bool $unavailable,
         private readonly ?string $rawBody = null,
+        private readonly string $throwKind = TransportException::KIND_UNKNOWN,
     ) {
     }
 
     public static function unavailable(): self
     {
         return new self(null, 0, true);
+    }
+
+    /** Throws a TransportException with the given attributed kind (timeout / connection). */
+    public static function throwing(string $kind): self
+    {
+        return new self(null, 0, true, null, $kind);
     }
 
     /** @param array<string, mixed> $body */
@@ -54,7 +64,7 @@ final class MockTransport implements TransportInterface
         $this->lastTimeoutMs = $timeoutMs;
 
         if ($this->unavailable) {
-            throw new TransportException('mock: API unavailable');
+            throw new TransportException('mock: API unavailable', $this->throwKind);
         }
 
         $payload = $this->rawBody ?? json_encode($this->responseBody, JSON_THROW_ON_ERROR);
