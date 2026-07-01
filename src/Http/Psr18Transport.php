@@ -37,7 +37,15 @@ final class Psr18Transport implements TransportInterface
         try {
             $response = $this->client->sendRequest($request);
         } catch (ClientExceptionInterface $exception) {
-            throw new TransportException('Verify API request failed: ' . $exception->getMessage(), 0, $exception);
+            // PSR-18 has no per-request timeout and folds timeout, DNS and
+            // connection failures into one exception type, so the cause cannot
+            // be told apart here: report the unreachable-endpoint kind.
+            throw new TransportException(
+                'Verify API request failed: ' . $exception->getMessage(),
+                TransportException::KIND_CONNECTION,
+                null,
+                $exception,
+            );
         }
 
         return new TransportResponse($response->getStatusCode(), (string) $response->getBody());

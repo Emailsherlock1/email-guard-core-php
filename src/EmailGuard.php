@@ -24,8 +24,8 @@ use Emailsherlock\EmailGuard\Local\SyntaxChecker;
  */
 final class EmailGuard
 {
-    public const VERSION = '0.3.0';
-    public const SPEC_VERSION = '1.2.0';
+    public const VERSION = '0.4.0';
+    public const SPEC_VERSION = '1.3.0';
 
     private const DEFAULTS = [
         'api_key' => null,
@@ -115,9 +115,16 @@ final class EmailGuard
                 $relay = ($apiResponse['relay'] ?? null) === true;
                 $provider = $apiResponse['relay_provider'] ?? null;
                 $relayProvider = is_string($provider) && $provider !== '' ? $provider : null;
-            } catch (TransportException) {
+            } catch (TransportException $exception) {
                 $verdict = Verdict::Unknown;
+                // api_unavailable is the stable umbrella for any degraded
+                // check (spec 5.2); the attributed cause rides after it so
+                // telemetry can separate a slow API from an errored one.
                 $reasons = [Reason::API_UNAVAILABLE];
+                $granular = self::degradedReason($exception);
+                if ($granular !== null) {
+                    $reasons[] = $granular;
+                }
                 $degraded = true;
             }
         }
@@ -188,14 +195,43 @@ final class EmailGuard
         );
 
         if ($response->statusCode < 200 || $response->statusCode >= 300) {
-            throw new TransportException('Verify API answered HTTP ' . $response->statusCode);
+            throw new TransportException(
+                'Verify API answered HTTP ' . $response->statusCode,
+                TransportException::KIND_HTTP,
+                $response->statusCode,
+            );
         }
         $data = json_decode($response->body, true);
         if (!is_array($data)) {
-            throw new TransportException('Verify API answered with a non-JSON body');
+            throw new TransportException(
+                'Verify API answered with a non-JSON body',
+                TransportException::KIND_BAD_RESPONSE,
+            );
         }
 
         return $data;
+    }
+
+    /**
+     * Maps a transport failure to its granular degraded reason (spec 5.2), or
+     * null when the cause cannot be attributed (then only `api_unavailable`
+     * stands). A non-2xx outside the 4xx/5xx buckets (a stray 1xx/3xx) is left
+     * unattributed rather than minting an out-of-band reserved name.
+     */
+    private static function degradedReason(TransportException $exception): ?string
+    {
+        return match ($exception->kind) {
+            TransportException::KIND_TIMEOUT => Reason::API_TIMEOUT,
+            TransportException::KIND_CONNECTION => Reason::API_UNREACHABLE,
+            TransportException::KIND_BAD_RESPONSE => Reason::API_BAD_RESPONSE,
+            TransportException::KIND_HTTP => match (true) {
+                $exception->statusCode === null => null,
+                $exception->statusCode >= 500 => Reason::API_HTTP_5XX,
+                $exception->statusCode >= 400 => Reason::API_HTTP_4XX,
+                default => null,
+            },
+            default => null,
+        };
     }
 
     private function resolveAction(Verdict $verdict, bool $degraded, bool $relay): Action

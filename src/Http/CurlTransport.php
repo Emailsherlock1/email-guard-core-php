@@ -34,9 +34,17 @@ final class CurlTransport implements TransportInterface
 
         $responseBody = curl_exec($handle);
         if ($responseBody === false) {
+            $errno = curl_errno($handle);
             $error = curl_error($handle);
             curl_close($handle);
-            throw new TransportException('Verify API request failed: ' . $error);
+            // curl error 28 (CURLE_OPERATION_TIMEOUTED) covers both the total
+            // and the connect timeout budget; everything else (DNS, TLS,
+            // refused connection) is an unreachable endpoint.
+            $kind = $errno === CURLE_OPERATION_TIMEOUTED
+                ? TransportException::KIND_TIMEOUT
+                : TransportException::KIND_CONNECTION;
+
+            throw new TransportException('Verify API request failed: ' . $error, $kind);
         }
         $status = (int) curl_getinfo($handle, CURLINFO_RESPONSE_CODE);
         curl_close($handle);

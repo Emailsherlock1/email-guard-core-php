@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.4.0] - 2026-06-30
+
+### Added
+
+- Granular degraded reasons (email-guard-spec 1.3.0, section 5.2). A failed API
+  escalation still reports `api_unavailable`, but `EmailGuard` now appends the
+  attributed cause: `api_timeout` (curl error 28 / connect-timeout),
+  `api_unreachable` (DNS / TLS / connection), `api_http_5xx` / `api_http_4xx`
+  (non-2xx status), or `api_bad_response` (a 2xx answer with a non-JSON body).
+  The new reasons flow through telemetry (`reasons[]`) unchanged, so the guard
+  dashboard can tell a latency problem apart from an API-health problem.
+- `TransportException` now carries a `$kind` (and `$statusCode` for HTTP
+  failures). `CurlTransport` classifies curl error 28 as a timeout and every
+  other `curl_exec` failure as a connection error; `Psr18Transport` reports
+  client exceptions as connection failures (PSR-18 cannot tell a timeout apart).
+
+### Changed
+
+- SPEC_VERSION is now 1.3.0; conformance vectors updated (`fail-open.json`
+  `fo-007` … `fo-012`). `fail_open` behavior is unchanged: a degraded check
+  still allows (or denies, with `fail_open: false`) exactly as before, and an
+  unattributed failure still reports `api_unavailable` alone.
+
 ## [0.3.0] - 2026-06-19
 
 ### Added
