@@ -21,6 +21,15 @@ final class Result
      *   unless the integrator lists `relay` in block_on / review_on.
      * @param ?string $relayProvider the service name when $relay is true (e.g.
      *   "SimpleLogin"), null otherwise. Informational.
+     * @param bool $spamTrap the spam_trap signal (spec 6.5): the mail host is a
+     *   known or suspected spam trap. Unlike relay this says nothing about
+     *   deliverability, and a trap accepting mail is the whole problem with it.
+     *   Only ever set by the remote check. Inert unless the integrator lists
+     *   `spam_trap` in block_on / review_on.
+     * @param ?string $spamTrapType how the host was identified when $spamTrap
+     *   is true: "known_trap_domain" (curated registry) or
+     *   "reputation_heuristic" (inferred, and so the weaker of the two). Null
+     *   otherwise. Informational, but worth reading before acting on a deny.
      */
     public function __construct(
         public readonly Verdict $verdict,
@@ -31,6 +40,8 @@ final class Result
         public readonly ?array $apiResponse = null,
         public readonly bool $relay = false,
         public readonly ?string $relayProvider = null,
+        public readonly bool $spamTrap = false,
+        public readonly ?string $spamTrapType = null,
     ) {
     }
 

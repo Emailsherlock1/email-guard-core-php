@@ -62,15 +62,16 @@ Every check returns a `Result` with four spec-defined fields:
 | `reasons` | `string[]` | machine-readable codes, e.g. `reserved_tld`, `mailbox_not_found` |
 | `degraded` | `bool` | true when the API was wanted but unreachable |
 
-Plus `apiCalled` and `apiResponse` (the raw Verify API payload, informational).
+Plus `apiCalled`, `apiResponse` (the raw Verify API payload, informational) and
+the signal fields below.
 
 ## Configuration
 
 | Key | Default | Notes |
 |---|---|---|
 | `api_key` | `null` | null disables the remote check entirely |
-| `block_on` | `['invalid', 'disposable']` | verdicts that deny |
-| `review_on` | `[]` | verdicts that flag for a second gate |
+| `block_on` | `['invalid', 'disposable']` | verdicts and signals that deny |
+| `review_on` | `[]` | verdicts and signals that flag for a second gate |
 | `fail_open` | `true` | an API outage lets addresses through, never blocks them |
 | `timeout_ms` | `800` | total budget for the API call |
 | `base_url` | `https://api.emailsherlock.com` | override for testing |
@@ -83,6 +84,42 @@ deny is. The defaults block provable junk and let everything debatable
 more than a leaked junk signup. If the API is unreachable, the local checks
 keep working and the rest passes with `degraded: true`. Set
 `'fail_open' => false` if your form prefers to reject on outage.
+
+## Signals
+
+A signal is a property the API reports alongside the verdict rather than
+instead of it, so an address can be `valid` and still carry one. Signals come
+only from the remote check, and each stays inert until you name it in
+`block_on` or `review_on`.
+
+| Signal | `Result` fields | What it says |
+|---|---|---|
+| `relay` | `relay`, `relayProvider` | the address is a masked forwarder (Apple Hide My Email, SimpleLogin, Cloudflare Email Routing, …). It reaches a real person, just not under this address. |
+| `spam_trap` | `spamTrap`, `spamTrapType` | the mail host is a known or suspected spam trap. It may well accept your mail, and that is the problem: sending to a trap is what costs you sender reputation. |
+
+```php
+$guard = new EmailGuard([
+    'api_key'   => $key,
+    'review_on' => ['spam_trap'],   // hold it, do not hard-block it
+    'block_on'  => ['invalid', 'disposable', 'relay'],
+]);
+```
+
+When a listed signal fires, its name lands in `reasons` next to the verdict's
+own reason, so a decision stays attributable in your logs and in the dashboard.
+List a signal in both `block_on` and `review_on` and it denies: deny beats
+review, for signals as for verdicts.
+
+Two things worth knowing before you pick a list:
+
+- `spamTrapType` says how the host was identified. `known_trap_domain` comes
+  from a curated registry; `reputation_heuristic` is inferred and can be wrong
+  about a real mailbox. That is why `review_on` is the safer home for
+  `spam_trap`, and `block_on` a deliberate trade.
+- An unrecognized token in `block_on` / `review_on` does nothing at all: no
+  error, no warning. That keeps a newer config working against an older
+  install, but it also means a typo is invisible. `Signal::names()` returns the
+  signal names this version implements, so you can check rather than assume.
 
 ## Custom HTTP client
 

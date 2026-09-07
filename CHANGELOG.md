@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.5.0] - 2026-09-07
+
+### Added
+
+- `spam_trap` signal (email-guard-spec 1.4.0, section 6.5). The Verify API has
+  been reporting `spam_trap` / `spam_trap_type` for a while, but this library
+  read only `relay`, so `review_on: ['spam_trap']` in a config was silently
+  inert rather than merely unconfigured, and no decision could ever carry
+  `spam_trap` in its `reasons`. `Result` gains `spamTrap` and `spamTrapType`
+  (`known_trap_domain` from a curated registry, `reputation_heuristic`
+  inferred), and `Reason::SPAM_TRAP` names the reason.
+- `Signal`, the signal vocabulary. `Signal::names()` returns the signal names
+  this version implements, which is the only way to tell a typo in `block_on` /
+  `review_on` from a signal your installed version predates: the spec makes
+  both inert, so neither raises anything.
+
+### Changed
+
+- `EmailGuard` reads, lists and resolves signals off `Signal::FIELDS` instead of
+  naming `relay` in four places. Adding the next signal is a row there plus its
+  two `Result` fields.
+- A signal's detail field is now kept only when its own signal is true. Before,
+  a response carrying `relay_provider` with `relay: false` surfaced the provider
+  anyway, against what `Result` documented ("null otherwise"). No known API
+  response does that, so this aligns the code with its docblock rather than
+  changing a behavior anyone relies on.
+- SPEC_VERSION is now 1.4.0; conformance vectors gain `spam-trap.json`
+  (`trap-001` … `trap-012`), including the cases where two signals are active
+  at once: one action, one reason each, appended in spec-table order.
+  Verdict-only configs and every existing vector are unaffected.
+
 ## [0.4.0] - 2026-06-30
 
 ### Added
