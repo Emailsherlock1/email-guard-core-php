@@ -24,8 +24,8 @@ use Emailsherlock\EmailGuard\Local\SyntaxChecker;
  */
 final class EmailGuard
 {
-    public const VERSION = '0.4.0';
-    public const SPEC_VERSION = '1.3.0';
+    public const VERSION = '0.5.0';
+    public const SPEC_VERSION = '1.4.0';
 
     private const DEFAULTS = [
         'api_key' => null,
@@ -99,9 +99,12 @@ final class EmailGuard
         $apiResponse = null;
         // Signals (spec 6.5): boolean response properties that overlay the
         // verdict. Only the remote check can set them; a local verdict or a
-        // degraded check leaves relay false.
-        $relay = false;
-        $relayProvider = null;
+        // degraded check leaves every signal false. Keyed by signal name, in
+        // the spec-table order Signal::FIELDS carries.
+        /** @var array<string, bool> */
+        $signals = array_fill_keys(Signal::names(), false);
+        /** @var array<string, string|null> */
+        $signalDetails = array_fill_keys(Signal::names(), null);
 
         if ($verdict === null && $this->config['api_key'] !== null) {
             $apiCalled = true;
@@ -112,9 +115,7 @@ final class EmailGuard
                 if (is_string($reason) && $reason !== '') {
                     $reasons[] = $reason;
                 }
-                $relay = ($apiResponse['relay'] ?? null) === true;
-                $provider = $apiResponse['relay_provider'] ?? null;
-                $relayProvider = is_string($provider) && $provider !== '' ? $provider : null;
+                [$signals, $signalDetails] = self::readSignals($apiResponse);
             } catch (TransportException $exception) {
                 $verdict = Verdict::Unknown;
                 // api_unavailable is the stable umbrella for any degraded
@@ -133,20 +134,26 @@ final class EmailGuard
 
         // An active signal (true AND listed in block_on/review_on) appends its
         // reason so telemetry can attribute the decision, even when a verdict
-        // independently produced the same action (spec 6.5).
-        if ($relay && $this->signalListed('relay')) {
-            $reasons[] = Reason::RELAY;
+        // independently produced the same action (spec 6.5). A signal's reason
+        // IS its name, and the append order is Signal::FIELDS order, which the
+        // vectors compare as a sequence.
+        foreach ($signals as $name => $isSet) {
+            if ($isSet && $this->signalListed($name)) {
+                $reasons[] = $name;
+            }
         }
 
         $result = new Result(
             verdict: $verdict,
-            action: $this->resolveAction($verdict, $degraded, $relay),
+            action: $this->resolveAction($verdict, $degraded, $signals),
             reasons: $reasons,
             degraded: $degraded,
             apiCalled: $apiCalled,
             apiResponse: $apiResponse,
-            relay: $relay,
-            relayProvider: $relayProvider,
+            relay: $signals[Signal::RELAY],
+            relayProvider: $signalDetails[Signal::RELAY],
+            spamTrap: $signals[Signal::SPAM_TRAP],
+            spamTrapType: $signalDetails[Signal::SPAM_TRAP],
         );
 
         // Telemetry (section 11): record the decision for later batched
@@ -234,24 +241,56 @@ final class EmailGuard
         };
     }
 
-    private function resolveAction(Verdict $verdict, bool $degraded, bool $relay): Action
+    /**
+     * Reads every signal (spec 6.5) out of one API response.
+     *
+     * A signal is true only on a literal boolean true, so a missing field, a
+     * null, or a truthy string never fires it: an API version that predates a
+     * signal must read as "not set", never as "set".
+     *
+     * The detail field rides along informationally and is kept only when its
+     * signal is true, which is what {@see Result} promises about
+     * relay_provider / spam_trap_type. A detail without its signal would be a
+     * value nothing in the decision path can explain.
+     *
+     * @param array<string, mixed> $response
+     *
+     * @return array{array<string, bool>, array<string, string|null>} signals, details
+     */
+    private static function readSignals(array $response): array
+    {
+        $signals = [];
+        $details = [];
+        foreach (Signal::FIELDS as $name => [$sourceField, $detailField]) {
+            $signals[$name] = ($response[$sourceField] ?? null) === true;
+            $detail = $response[$detailField] ?? null;
+            $details[$name] = $signals[$name] && is_string($detail) && $detail !== ''
+                ? $detail
+                : null;
+        }
+
+        return [$signals, $details];
+    }
+
+    /**
+     * @param array<string, bool> $signals every known signal, true when the
+     *   response set it
+     */
+    private function resolveAction(Verdict $verdict, bool $degraded, array $signals): Action
     {
         if ($degraded) {
             // Degradation bypasses block_on/review_on entirely (spec 6.4):
             // blocking "unknown" is a statement about answered unknowns, not
             // about outages. fail_open alone decides here. Signals never fire on
-            // a degraded check (relay is false), so they are moot here too.
+            // a degraded check (all false), so they are moot here too.
             return $this->config['fail_open'] ? Action::Allow : Action::Deny;
         }
-        // A verdict OR an active relay signal can deny; deny beats review.
-        if (in_array($verdict->value, $this->config['block_on'], true)
-            || ($relay && in_array('relay', $this->config['block_on'], true))
-        ) {
+        // A verdict OR any signal the response set can deny; deny beats review,
+        // and two active signals still produce one action (spec 6.4).
+        if (self::policyMatches($verdict, $signals, $this->config['block_on'])) {
             return Action::Deny;
         }
-        if (in_array($verdict->value, $this->config['review_on'], true)
-            || ($relay && in_array('relay', $this->config['review_on'], true))
-        ) {
+        if (self::policyMatches($verdict, $signals, $this->config['review_on'])) {
             return Action::Review;
         }
 
@@ -259,7 +298,31 @@ final class EmailGuard
     }
 
     /**
+     * True when one policy list (block_on or review_on) names the verdict or a
+     * signal the response set. An unknown token matches nothing and is not an
+     * error (spec 6.3).
+     *
+     * @param array<string, bool> $signals
+     * @param list<string> $policy
+     */
+    private static function policyMatches(Verdict $verdict, array $signals, array $policy): bool
+    {
+        if (in_array($verdict->value, $policy, true)) {
+            return true;
+        }
+        foreach ($signals as $name => $isSet) {
+            if ($isSet && in_array($name, $policy, true)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * True when the named signal (spec 6.5) appears in block_on or review_on.
+     * Listing decides whether an active signal appends its reason; which of the
+     * two lists it is in is {@see self::resolveAction}'s business.
      */
     private function signalListed(string $signal): bool
     {
