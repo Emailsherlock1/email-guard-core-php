@@ -7,7 +7,7 @@ a fake address costs real money.
 Without an API key it blocks what it can prove locally: broken syntax,
 reserved TLDs (`deleted+user274@deleted.invalid` is syntactically fine and
 still junk), and 73k+ known disposable domains from the bundled snapshot.
-Zero network calls, zero latency. An [EmailSherlock API key](https://emailsherlock.com/api/docs)
+Zero network calls, zero latency. An [EmailSherlock API key](https://www.hostsherlock.com/api/docs)
 adds the data unlock: live MX, SMTP probe, a fresh disposable list, role and
 catch-all detection.
 

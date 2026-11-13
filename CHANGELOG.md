@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1] - 2026-11-13
+
+### Changed
+
+- README links point at hostsherlock.com (the product site moved; the API host
+  `api.emailsherlock.com` is unchanged).
+
 ## [0.4.0] - 2026-06-30
 
 ### Added
