@@ -41,8 +41,21 @@ final class Reason
      * Appended when the `relay` signal is active (spec 6.5). Not a local-check
      * reason: it rides the result's reason list so telemetry can attribute a
      * relay-driven decision.
+     *
+     * A signal reason is the signal's own name, so these two constants are
+     * deliberately equal to {@see Signal::RELAY} / {@see Signal::SPAM_TRAP}
+     * rather than derived from them: this class is the reason vocabulary and
+     * {@see Signal} the signal vocabulary, and a caller reading a reason list
+     * should not have to know that one is spelled from the other.
      */
-    public const RELAY = 'relay';
+    public const RELAY = Signal::RELAY;
+
+    /**
+     * Appended when the `spam_trap` signal is active (spec 6.5): the mail host
+     * is a known or suspected spam trap. Sending to it damages the sender's
+     * reputation, which is why the address accepting mail is not reassuring.
+     */
+    public const SPAM_TRAP = Signal::SPAM_TRAP;
 
     private function __construct()
     {

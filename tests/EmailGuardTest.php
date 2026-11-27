@@ -9,8 +9,10 @@ use Emailsherlock\EmailGuard\EmailGuard;
 use Emailsherlock\EmailGuard\Http\TransportException;
 use Emailsherlock\EmailGuard\Local\DisposableSnapshot;
 use Emailsherlock\EmailGuard\Reason;
+use Emailsherlock\EmailGuard\Signal;
 use Emailsherlock\EmailGuard\Tests\Support\MockTransport;
 use Emailsherlock\EmailGuard\Verdict;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -73,6 +75,116 @@ final class EmailGuardTest extends TestCase
 
         $this->assertFalse($result->relay);
         $this->assertNull($result->relayProvider);
+    }
+
+    public function testSpamTrapSignalIsExposedOnResultEvenWhenNotBlocked(): void
+    {
+        // Same contract as relay: the default config lists no signal, so the
+        // address is allowed, but the integrator still sees the finding.
+        $transport = MockTransport::respondingWith([
+            'result' => 'valid',
+            'reason' => 'mailbox_accepts',
+            'spam_trap' => true,
+            'spam_trap_type' => 'known_trap_domain',
+        ]);
+        $guard = new EmailGuard(['api_key' => 'k'], $transport, $this->fixtureSnapshot());
+
+        $result = $guard->check('jane@trap-corp.com');
+
+        $this->assertTrue($result->spamTrap);
+        $this->assertSame('known_trap_domain', $result->spamTrapType);
+        $this->assertTrue($result->isAllowed());
+        $this->assertSame(['mailbox_accepts'], $result->reasons);
+    }
+
+    public function testSpamTrapTypeSurvivesOnAReviewedAddress(): void
+    {
+        // The type is what an integrator reads to decide how much to trust the
+        // finding, so it has to be there on the decision that acts on it, not
+        // just on the inert one above.
+        $transport = MockTransport::respondingWith([
+            'result' => 'valid',
+            'reason' => 'mailbox_accepts',
+            'spam_trap' => true,
+            'spam_trap_type' => 'reputation_heuristic',
+        ]);
+        $guard = new EmailGuard(
+            ['api_key' => 'k', 'review_on' => [Signal::SPAM_TRAP]],
+            $transport,
+            $this->fixtureSnapshot(),
+        );
+
+        $result = $guard->check('jane@trap-corp.com');
+
+        $this->assertTrue($result->needsReview());
+        $this->assertSame('reputation_heuristic', $result->spamTrapType);
+        $this->assertSame(['mailbox_accepts', 'spam_trap'], $result->reasons);
+    }
+
+    public function testSignalDetailIsDroppedWhenItsSignalIsFalse(): void
+    {
+        // A detail without its signal describes nothing the decision path can
+        // explain, and Result documents both as "null otherwise".
+        $transport = MockTransport::respondingWith([
+            'result' => 'valid',
+            'reason' => 'mailbox_accepts',
+            'relay' => false,
+            'relay_provider' => 'SimpleLogin',
+            'spam_trap' => false,
+            'spam_trap_type' => 'known_trap_domain',
+        ]);
+        $guard = new EmailGuard(['api_key' => 'k'], $transport, $this->fixtureSnapshot());
+
+        $result = $guard->check('jane@real-corp.com');
+
+        $this->assertFalse($result->relay);
+        $this->assertNull($result->relayProvider);
+        $this->assertFalse($result->spamTrap);
+        $this->assertNull($result->spamTrapType);
+    }
+
+    /**
+     * A signal fires on boolean true and nothing else. The API sends real
+     * booleans, but a proxy that JSON-encodes everything as strings would
+     * otherwise turn "false" into a deny.
+     */
+    #[DataProvider('nonBooleanTrueValues')]
+    public function testOnlyBooleanTrueFiresASignal(mixed $value): void
+    {
+        $transport = MockTransport::respondingWith([
+            'result' => 'valid',
+            'reason' => 'mailbox_accepts',
+            'spam_trap' => $value,
+        ]);
+        $guard = new EmailGuard(
+            ['api_key' => 'k', 'block_on' => [Signal::SPAM_TRAP]],
+            $transport,
+            $this->fixtureSnapshot(),
+        );
+
+        $result = $guard->check('jane@trap-corp.com');
+
+        $this->assertFalse($result->spamTrap);
+        $this->assertTrue($result->isAllowed());
+        $this->assertSame(['mailbox_accepts'], $result->reasons);
+    }
+
+    /** @return iterable<string, array{mixed}> */
+    public static function nonBooleanTrueValues(): iterable
+    {
+        yield 'string true' => ['true'];
+        yield 'string false' => ['false'];
+        yield 'integer one' => [1];
+        yield 'null' => [null];
+    }
+
+    public function testSignalNamesAreTheVocabularyInSpecTableOrder(): void
+    {
+        // Public because the spec asks for it: an unknown token in block_on is
+        // inert by design, so this list is how an integrator tells a typo from
+        // a signal this version predates. The order is the order active signals
+        // append their reasons, which the vectors compare as a sequence.
+        $this->assertSame(['relay', 'spam_trap'], Signal::names());
     }
 
     public function testNon2xxDegradesAndAttributesHttpBucket(): void
