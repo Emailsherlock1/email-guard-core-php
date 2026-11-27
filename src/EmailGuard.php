@@ -25,7 +25,7 @@ use Emailsherlock\EmailGuard\Local\SyntaxChecker;
 final class EmailGuard
 {
     public const VERSION = '0.5.0';
-    public const SPEC_VERSION = '1.4.0';
+    public const SPEC_VERSION = '1.5.0';
 
     private const DEFAULTS = [
         'api_key' => null,

@@ -1,10 +1,10 @@
 # Changelog
 
-## [0.5.0] - 2026-09-07
+## [0.5.0] - 2026-11-27
 
 ### Added
 
-- `spam_trap` signal (email-guard-spec 1.4.0, section 6.5). The Verify API has
+- `spam_trap` signal (email-guard-spec 1.5.0, section 6.5). The Verify API has
   been reporting `spam_trap` / `spam_trap_type` for a while, but this library
   read only `relay`, so `review_on: ['spam_trap']` in a config was silently
   inert rather than merely unconfigured, and no decision could ever carry
@@ -26,10 +26,28 @@
   anyway, against what `Result` documented ("null otherwise"). No known API
   response does that, so this aligns the code with its docblock rather than
   changing a behavior anyone relies on.
-- SPEC_VERSION is now 1.4.0; conformance vectors gain `spam-trap.json`
+- SPEC_VERSION is now 1.5.0; conformance vectors gain `spam-trap.json`
   (`trap-001` … `trap-012`), including the cases where two signals are active
   at once: one action, one reason each, appended in spec-table order.
   Verdict-only configs and every existing vector are unaffected.
+
+## [0.4.2] - 2026-11-26
+
+### Fixed
+
+- `SyntaxChecker` rejects a line feed at the end of the local part or of a
+  domain label (`jane\n@example.com`, `jane@example\n.com`). The patterns
+  anchored with a bare `$`, which PCRE also matches before a final `\n`, so
+  each part checked on its own let it through; they now carry the `D`
+  modifier. Implements email-guard-spec 1.4.0 (vectors `syntax-025` to
+  `syntax-028`), `SPEC_VERSION` is `1.4.0`.
+
+## [0.4.1] - 2026-11-13
+
+### Changed
+
+- README links point at hostsherlock.com (the product site moved; the API host
+  `api.emailsherlock.com` is unchanged).
 
 ## [0.4.0] - 2026-06-30
 

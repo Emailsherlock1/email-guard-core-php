@@ -14,8 +14,10 @@ namespace Emailsherlock\EmailGuard\Local;
  */
 final class SyntaxChecker
 {
-    private const LOCAL_PATTERN = '/^[A-Za-z0-9!#$%&\'*+\/=?^_`{|}~.-]+$/';
-    private const LABEL_PATTERN = '/^[A-Za-z0-9-]+$/';
+    // `D`: without it PCRE's `$` also matches before a final "\n", so a part
+    // checked on its own ("jane\n" before the @) would pass (spec 1.4.0, syntax-025).
+    private const LOCAL_PATTERN = '/^[A-Za-z0-9!#$%&\'*+\/=?^_`{|}~.-]+$/D';
+    private const LABEL_PATTERN = '/^[A-Za-z0-9-]+$/D';
 
     public static function isValid(string $address): bool
     {
@@ -77,7 +79,7 @@ final class SyntaxChecker
             }
         }
         $tld = $labels[count($labels) - 1];
-        if (strlen($tld) < 2 || preg_match('/^[0-9]+$/', $tld) === 1) {
+        if (strlen($tld) < 2 || preg_match('/^[0-9]+$/D', $tld) === 1) {
             return false;
         }
         return true;

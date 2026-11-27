@@ -23,7 +23,7 @@ final class Signal
     /** The address sits on a relay / forwarding / alias-masking service (spec 1.2.0). */
     public const RELAY = 'relay';
 
-    /** The mail host is a known or suspected spam trap (spec 1.4.0). */
+    /** The mail host is a known or suspected spam trap (spec 1.5.0). */
     public const SPAM_TRAP = 'spam_trap';
 
     /**
