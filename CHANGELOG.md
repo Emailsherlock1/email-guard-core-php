@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.4.2] - 2026-11-26
+
+### Fixed
+
+- `SyntaxChecker` rejects a line feed at the end of the local part or of a
+  domain label (`jane\n@example.com`, `jane@example\n.com`). The patterns
+  anchored with a bare `$`, which PCRE also matches before a final `\n`, so
+  each part checked on its own let it through; they now carry the `D`
+  modifier. Implements email-guard-spec 1.4.0 (vectors `syntax-025` to
+  `syntax-028`), `SPEC_VERSION` is `1.4.0`.
+
 ## [0.4.1] - 2026-11-13
 
 ### Changed
